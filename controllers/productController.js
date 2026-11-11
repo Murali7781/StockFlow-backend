@@ -114,28 +114,64 @@ async function remove(req, res) {
       throw new AppError(404, 'PRODUCT_NOT_FOUND', 'Product was not found');
     }
 
-    const legacyMovementTable = await sequelize.query(
-      `SELECT 1
-       FROM information_schema.tables
-       WHERE table_schema = DATABASE()
-         AND table_name = 'inventory_movements'
-       LIMIT 1`,
-      { transaction, type: QueryTypes.SELECT },
-    );
-    if (legacyMovementTable.length) {
-      await sequelize.query(
-        `DELETE FROM inventory_movements
+    const relatedRecords = await Promise.all([
+      sequelize.query(
+        `SELECT 1
+         FROM warehouse_stocks
          WHERE product_id = :productId
-           AND organization_id = :organizationId`,
+           AND organization_id = :organizationId
+         LIMIT 1`,
         {
-          replacements: {
-            productId: id,
-            organizationId: req.user.organizationId,
-          },
+          replacements: { productId: id, organizationId: req.user.organizationId },
           transaction,
+          type: QueryTypes.SELECT,
         },
+      ),
+      sequelize.query(
+        `SELECT 1
+         FROM inventory_movements
+         WHERE product_id = :productId
+           AND organization_id = :organizationId
+         LIMIT 1`,
+        {
+          replacements: { productId: id, organizationId: req.user.organizationId },
+          transaction,
+          type: QueryTypes.SELECT,
+        },
+      ),
+      sequelize.query(
+        `SELECT 1
+         FROM purchase_orders
+         WHERE organization_id = :organizationId
+           AND JSON_CONTAINS(\`lines\`, JSON_OBJECT('productId', :productId), '$')
+         LIMIT 1`,
+        {
+          replacements: { productId: id, organizationId: req.user.organizationId },
+          transaction,
+          type: QueryTypes.SELECT,
+        },
+      ),
+      sequelize.query(
+        `SELECT 1
+         FROM sales_orders
+         WHERE organization_id = :organizationId
+           AND JSON_CONTAINS(\`lines\`, JSON_OBJECT('productId', :productId), '$')
+         LIMIT 1`,
+        {
+          replacements: { productId: id, organizationId: req.user.organizationId },
+          transaction,
+          type: QueryTypes.SELECT,
+        },
+      ),
+    ]);
+    if (relatedRecords.some((records) => records.length > 0)) {
+      throw new AppError(
+        409,
+        'PRODUCT_IN_USE',
+        'Product has related inventory or order records and cannot be deleted',
       );
     }
+
     await product.destroy({ transaction });
   });
   return res.status(204).end();

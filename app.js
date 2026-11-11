@@ -9,6 +9,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const settingRoutes = require('./routes/settingRoutes');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
+const { formatDatabaseError } = require('./utils/databaseErrors');
 
 const app = express();
 const { corsOrigins, trustProxyHops } = getEnvironment();
@@ -31,7 +32,7 @@ app.get('/api/health', async (req, res, next) => {
     await sequelize.authenticate();
     return res.json({ data: { status: 'ok', database: 'connected' } });
   } catch (error) {
-    console.error('Database health check failed:', error.message);
+    console.error('Database health check failed:', formatDatabaseError(error));
     return res.status(503).json({
       error: { code: 'DATABASE_UNAVAILABLE', message: 'Database is unavailable' },
     });

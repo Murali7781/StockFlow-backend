@@ -1,5 +1,9 @@
-process.env.DB_NAME = process.env.DB_NAME || 'stockflow_test';
-process.env.DB_USER = process.env.DB_USER || 'test_user';
+process.env.DB_PROVIDER = 'local';
+process.env.LOCAL_DB_HOST = 'localhost';
+process.env.LOCAL_DB_PORT = '3306';
+process.env.LOCAL_DB_NAME = 'stockflow_test';
+process.env.LOCAL_DB_USER = 'test_user';
+process.env.LOCAL_DB_PASSWORD = 'test_password';
 process.env.JWT_SECRET =
   process.env.JWT_SECRET || 'test-secret-that-is-at-least-thirty-two-characters-long';
 
@@ -126,16 +130,18 @@ test('product updates look up the product inside the authenticated organization'
   assert.equal(response.body.data, product);
 });
 
-test('product deletion removes only its tenant-scoped legacy movement references', async (t) => {
+test('product deletion preserves related records and deletes an unreferenced tenant product', async (t) => {
   const productId = '00000000-0000-4000-8000-000000000001';
   const organizationId = 'tenant-a';
   const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+  let destroyed = false;
   const product = {
     async destroy(options) {
       assert.equal(options.transaction, transaction);
+      destroyed = true;
     },
   };
-  let movementDelete;
+  const referenceChecks = [];
 
   replaceMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
   replaceMethod(t, Product, 'findOne', async (options) => {
@@ -143,8 +149,7 @@ test('product deletion removes only its tenant-scoped legacy movement references
     return product;
   });
   replaceMethod(t, sequelize, 'query', async (sql, options) => {
-    if (options.type === QueryTypes.SELECT) return [{ tableExists: 1 }];
-    movementDelete = { sql, options };
+    referenceChecks.push({ sql, options });
     return [];
   });
 
@@ -163,13 +168,46 @@ test('product deletion removes only its tenant-scoped legacy movement references
     },
   );
 
-  assert.match(movementDelete.sql, /product_id = :productId/);
-  assert.deepEqual(movementDelete.options.replacements, {
-    productId,
-    organizationId,
-  });
+  assert.equal(referenceChecks.length, 4);
+  assert.ok(referenceChecks.every(({ options }) => options.replacements.productId === productId));
+  assert.ok(referenceChecks.every(({ options }) => options.replacements.organizationId === organizationId));
+  assert.ok(referenceChecks.every(({ sql }) => sql.includes('SELECT 1')));
+  assert.equal(destroyed, true);
   assert.equal(response.status, 204);
   assert.equal(response.ended, true);
+});
+
+test('product deletion preserves its existing inventory history', async (t) => {
+  const productId = '00000000-0000-4000-8000-000000000001';
+  const organizationId = 'tenant-a';
+  const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+  let destroyed = false;
+  const product = {
+    async destroy() {
+      destroyed = true;
+    },
+  };
+  let queryCount = 0;
+
+  replaceMethod(t, sequelize, 'transaction', async (callback) => callback(transaction));
+  replaceMethod(t, Product, 'findOne', async () => product);
+  replaceMethod(t, sequelize, 'query', async (sql, options) => {
+    queryCount += 1;
+    assert.ok(sql.includes('SELECT 1'));
+    assert.equal(options.replacements.productId, productId);
+    assert.equal(options.replacements.organizationId, organizationId);
+    return sql.includes('inventory_movements') ? [{ exists: 1 }] : [];
+  });
+
+  await assert.rejects(
+    remove(
+      { user: { organizationId }, params: { id: productId } },
+      { status() { return this; }, end() { return this; } },
+    ),
+    { code: 'PRODUCT_IN_USE' },
+  );
+  assert.equal(queryCount, 4);
+  assert.equal(destroyed, false);
 });
 
 test('a product from another organization cannot be deleted', async (t) => {

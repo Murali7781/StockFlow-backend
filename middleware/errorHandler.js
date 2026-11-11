@@ -1,4 +1,8 @@
-const { UniqueConstraintError, ValidationError } = require('sequelize');
+const {
+  ForeignKeyConstraintError,
+  UniqueConstraintError,
+  ValidationError,
+} = require('sequelize');
 const AppError = require('../utils/AppError');
 
 function errorHandler(error, req, res, next) {
@@ -23,6 +27,10 @@ function errorHandler(error, req, res, next) {
     status = 409;
     code = 'CONFLICT';
     message = 'A record with the supplied unique value already exists';
+  } else if (error instanceof ForeignKeyConstraintError) {
+    status = 409;
+    code = 'RESOURCE_IN_USE';
+    message = 'This record is referenced by other records and cannot be changed or deleted';
   } else if (error instanceof ValidationError) {
     status = 400;
     code = 'VALIDATION_ERROR';

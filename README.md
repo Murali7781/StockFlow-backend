@@ -1,19 +1,41 @@
 # StockFlow MVP API
 
-The backend implements the Phase 1 six-hour MVP: email/password signup and
-login, one organization per owner, organization-scoped product CRUD, a basic
-inventory dashboard, and the organization's default low-stock threshold.
-Multi-warehouse, categories, movements, suppliers, customers, orders, reports,
-and integrations are intentionally not part of this application phase.
+The active MVP API provides email/password signup and login,
+organization-scoped products, dashboard statistics, and organization settings.
+Supplier, customer, warehouse, purchase-order, sales-order, and inventory
+movement files remain in the repository but their routes are not mounted.
+Categories and integrations are present in the database but are not exposed by
+the MVP API.
 
 ## Run locally
 
-1. Create a MySQL database.
-2. Copy `.env.example` to `.env`; set the MySQL credentials and a private
-   `JWT_SECRET` of at least 32 characters.
-3. Run `npm install`.
-4. Check the connection with `npm run db:test`.
-5. Start with `npm run dev` or `npm start`.
+1. Copy `.env.example` to `.env`; set local MySQL credentials and a private
+   `JWT_SECRET` of at least 32 characters. To use TiDB, also set its fields
+   and CA certificate path.
+2. Run `npm install`.
+3. Check the selected connection and read-only schema metadata with
+   `npm run db:test`.
+4. Start with `npm run dev` or `npm start`.
+
+Set `DB_PROVIDER=local` to select local MySQL, configured by
+`LOCAL_DB_HOST=localhost`, `LOCAL_DB_PORT=3306`, `LOCAL_DB_USER`,
+`LOCAL_DB_PASSWORD`, and `LOCAL_DB_NAME`. Set `DB_PROVIDER=tidb` to select
+TiDB Cloud, configured by `TIDB_HOST`, `TIDB_PORT=4000`, `TIDB_USER`,
+`TIDB_PASSWORD`, `TIDB_NAME`, and `TIDB_CA_CERT_PATH`. The TiDB CA must be a
+PEM certificate file. TiDB TLS always verifies the server certificate.
+Database credentials and CA files must remain server-side.
+
+The backend keeps one Sequelize instance and its managed MySQL connection
+pool, using the installed `mysql2` driver. Existing controllers and models
+continue using that same interface regardless of the selected provider.
+
+To test either configured server (both commands only connect and inspect
+schema metadata; they do not modify tables or records), run from `backend`:
+
+```powershell
+npm run db:test:local
+npm run db:test:tidb
+```
 
 The API listens on port `3000` by default. `GET /api/health` checks both the
 API and its database connection. Set `CORS_ORIGINS` to the frontend origin.
@@ -21,11 +43,36 @@ Authentication routes have IP-based rate limits, and Helmet sets standard
 HTTP security headers. If deployed behind a trusted reverse proxy, set
 `TRUST_PROXY_HOPS` to the exact number of proxy hops configured by the host;
 leave it at `0` for direct connections.
-On startup, Sequelize creates missing tables for the core MVP models without
-using `force` or `alter`.
+The active API is intentionally limited to authentication, products,
+dashboard, and settings. Requests to the retained non-MVP supplier, customer,
+warehouse, order, and inventory-movement routes return `404`.
+Startup verifies a database connection but does not create or alter tables.
+The existing schema must already be migrated. `npm run db:test` only reads
+`information_schema` and verifies the model tables, columns, and expected
+relationships; it does not modify database records or schema.
 
-Previously created out-of-scope tables and columns are left untouched to
-preserve existing data. The MVP API and UI do not read or expose them.
+## Render deployment
+
+Create a Render Web Service for this backend, set its root directory to
+`backend`, and use `npm install` as the build command and `npm start` as the
+start command. Set `NODE_ENV=production` so the backend uses only Render
+environment values and does not load a local `.env` file. Add
+`DB_PROVIDER=tidb`, `TIDB_HOST`, `TIDB_PORT=4000`, `TIDB_USER`,
+`TIDB_PASSWORD`, and `TIDB_NAME` in Render's **Environment** settings. Add the
+TiDB CA certificate as a Render **Secret File**, then set
+`TIDB_CA_CERT_PATH` to its absolute path (for example
+`/etc/secrets/tidb-ca.pem`). Do not put credentials or certificates in frontend
+variables or commit them.
+
+- `JWT_SECRET`: a randomly generated secret with at least 32 characters.
+- `CORS_ORIGINS`: the deployed frontend origin, such as `https://example.com`.
+- `TRUST_PROXY_HOPS`: the exact number of trusted proxy hops; set to `1` for a
+  typical Render service.
+
+Render supplies `PORT` automatically; the backend also defaults to `3000` for
+local development. To validate a Render-equivalent setup locally, provide the
+same environment variables and run `npm run db:test:tidb`. No deployment is
+performed by this project change.
 
 ## API
 
@@ -37,7 +84,7 @@ Successful responses use a `data` property. Errors use
 | POST | `/api/auth/register` | No | Create an organization, owner, and default threshold. Requires `email`, `password`, `confirmPassword`, and `organizationName`. |
 | POST | `/api/auth/login` | No | Sign in with email and password; returns a bearer token. |
 | GET/POST | `/api/products` | Yes | List or create products. Listing supports name/SKU `search`, `page`, `limit`, `sortBy`, and `sortOrder`. |
-| GET/PUT/PATCH/DELETE | `/api/products/:id` | Yes | Read, update, or delete an organization-owned product. |
+| GET/PUT/PATCH/DELETE | `/api/products/:id` | Yes | Read or update an organization-owned product; deletion is blocked while inventory or order records reference it. |
 | GET | `/api/dashboard` | Yes | Organization-scoped product count, total quantity, and low-stock products. |
 | GET/PATCH | `/api/settings` | Yes | Read or update `defaultLowStockThreshold`. |
 
