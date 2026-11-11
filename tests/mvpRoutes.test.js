@@ -8,6 +8,7 @@ process.env.LOCAL_DB_PORT ||= '3306';
 process.env.LOCAL_DB_USER ||= 'test';
 process.env.LOCAL_DB_PASSWORD ||= '';
 process.env.LOCAL_DB_NAME ||= 'stockflow_test';
+process.env.CORS_ORIGINS = 'https://frontend.example';
 
 const app = require('../app');
 
@@ -22,6 +23,7 @@ test('only the four core MVP API modules are mounted', async () => {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const coreRoutes = [
       { path: '/api/auth/login', method: 'POST', body: {}, status: 400 },
+      { path: '/auth/login', method: 'POST', body: {}, status: 404 },
       { path: '/api/products', method: 'GET', status: 401 },
       { path: '/api/dashboard', method: 'GET', status: 401 },
       { path: '/api/settings', method: 'GET', status: 401 },
@@ -53,6 +55,40 @@ test('only the four core MVP API modules are mounted', async () => {
       assert.equal(response.status, 404, `GET ${route}`);
       assert.equal((await response.json()).error.code, 'NOT_FOUND');
     }
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test('auth preflight is handled for an allowed frontend origin', async () => {
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((resolve, reject) => {
+    server.once('listening', resolve);
+    server.once('error', reject);
+  });
+
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/auth/login`,
+      {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'https://frontend.example',
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'content-type',
+        },
+      },
+    );
+
+    assert.equal(response.status, 204);
+    assert.equal(
+      response.headers.get('access-control-allow-origin'),
+      'https://frontend.example',
+    );
+    assert.match(response.headers.get('access-control-allow-methods'), /POST/);
+    assert.match(response.headers.get('access-control-allow-headers'), /content-type/i);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

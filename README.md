@@ -73,14 +73,32 @@ certificate contents or credentials. Do not put credentials or certificates
 in frontend variables or commit them.
 
 - `JWT_SECRET`: a randomly generated secret with at least 32 characters.
-- `CORS_ORIGINS`: the deployed frontend origin, such as `https://example.com`.
+- `CORS_ORIGINS`: the frontend origin, without a path or trailing slash. For the
+  current deployment, set it to
+  `https://stock-flow-frontend-q3aievnkw-murali7781s-projects.vercel.app`.
 - `TRUST_PROXY_HOPS`: the exact number of trusted proxy hops; set to `1` for a
   typical Render service.
 
 Render supplies `PORT` automatically; the backend also defaults to `3000` for
-local development. To validate a Render-equivalent setup locally, provide the
-same environment variables and run `npm run db:test:tidb`. No deployment is
-performed by this project change.
+local development. In Vercel, set `VITE_API_URL` to
+`https://stockflow-backend-kspj.onrender.com/api` and redeploy the frontend.
+The `/api` suffix is required: the authentication endpoints are mounted under
+`/api/auth`, not `/auth`.
+
+To validate the preflight after configuring the Render environment, run:
+
+```powershell
+curl.exe -i -X OPTIONS "https://stockflow-backend-kspj.onrender.com/api/auth/login" `
+  -H "Origin: https://stock-flow-frontend-q3aievnkw-murali7781s-projects.vercel.app" `
+  -H "Access-Control-Request-Method: POST" `
+  -H "Access-Control-Request-Headers: content-type"
+```
+
+Expect `204 No Content` and an
+`Access-Control-Allow-Origin` header matching the frontend origin. To validate
+a Render-equivalent database setup locally, provide the same environment
+variables and run `npm run db:test:tidb`. No deployment is performed by this
+project change.
 
 ## API
 
