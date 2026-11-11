@@ -36,7 +36,6 @@ function errorHandler(error, req, res, next) {
     code = 'VALIDATION_ERROR';
     message = error.errors.map((item) => item.message).join(', ');
   } else if (!(error instanceof AppError)) {
-3
     console.error('Unhandled request error:', {
       name: error.name,
       code: error.original?.code || error.code,

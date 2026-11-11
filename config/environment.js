@@ -1,8 +1,31 @@
 const path = require('node:path');
 const dotenv = require('dotenv');
 
+const PRODUCTION_CORS_ORIGINS = ['https://stock-flow-frontend-murex.vercel.app'];
+const DEVELOPMENT_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
+}
+
+function getCorsOrigins(environment = process.env) {
+  const configuredOrigins = (environment.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  const developmentOrigins =
+    environment.NODE_ENV === 'production' ? [] : DEVELOPMENT_CORS_ORIGINS;
+
+  return [
+    ...new Set([
+      ...PRODUCTION_CORS_ORIGINS,
+      ...configuredOrigins,
+      ...developmentOrigins,
+    ]),
+  ];
 }
 
 function getPort(value, fallback, name) {
@@ -31,11 +54,8 @@ function getEnvironment() {
     jwtSecret,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1h',
     trustProxyHops,
-    corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173')
-      .split(',')
-      .map((origin) => origin.trim().replace(/\/+$/, ''))
-      .filter(Boolean),
+    corsOrigins: getCorsOrigins(),
   };
 }
 
-module.exports = { getEnvironment };
+module.exports = { getEnvironment, getCorsOrigins };
