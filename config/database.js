@@ -30,6 +30,7 @@ function logDatabaseDiagnostics(diagnostics) {
   console.info(`[database] TiDB CA file exists: ${diagnostics.certificateFileExists}`);
   console.info(`[database] TiDB CA file readable: ${diagnostics.certificateFileReadable}`);
   console.info(`[database] TiDB CA inline content configured: ${diagnostics.inlineCertificateConfigured}`);
+  console.info(`[database] TiDB CA source selected: ${diagnostics.certificateSource}`);
   console.info(`[database] TiDB CA certificate valid: ${diagnostics.certificateValid}`);
   console.info(`[database] Database configuration valid: ${diagnostics.databaseConfigurationValid}`);
 }
@@ -44,8 +45,9 @@ function getDatabaseConfig(environment = process.env, diagnostics) {
       Boolean(environment.TIDB_CA_CERT_PATH.trim());
     diagnostics.inlineCertificateConfigured =
       provider === 'tidb' &&
-      typeof environment.TIDB_CA_CERT === 'string' &&
-      Boolean(environment.TIDB_CA_CERT.trim());
+      [environment.TIDB_CA_CERT, environment.DB_CA_CERT].some(
+        (certificate) => typeof certificate === 'string' && Boolean(certificate.trim()),
+      );
   }
   if (provider !== 'local' && provider !== 'tidb') {
     throw new Error('DB_PROVIDER must be either local or tidb');
@@ -57,14 +59,55 @@ function getDatabaseConfig(environment = process.env, diagnostics) {
       typeof environment.TIDB_CA_CERT_PATH === 'string'
         ? environment.TIDB_CA_CERT_PATH.trim()
         : '';
-    const inlineCertificate =
-      typeof environment.TIDB_CA_CERT === 'string' ? environment.TIDB_CA_CERT : '';
-    let ca;
-    if (caPath) {
-      const resolvedCaPath = path.isAbsolute(caPath)
+    const resolvedCaPath = caPath
+      ? path.isAbsolute(caPath)
         ? caPath
-        : path.resolve(__dirname, '..', caPath);
-      if (diagnostics) diagnostics.certificateFileExists = fs.existsSync(resolvedCaPath);
+        : path.resolve(__dirname, '..', caPath)
+      : '';
+    if (diagnostics && resolvedCaPath) {
+      diagnostics.certificateFileExists = fs.existsSync(resolvedCaPath);
+    }
+    const tidbInlineCertificate =
+      typeof environment.TIDB_CA_CERT === 'string' ? environment.TIDB_CA_CERT : '';
+    const legacyInlineCertificate =
+      typeof environment.DB_CA_CERT === 'string' ? environment.DB_CA_CERT : '';
+    const validateCertificate = (certificate) => {
+      if (!certificate.trim()) return false;
+      const certificates =
+        certificate.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+      const contentOutsideCertificates = certificate
+        .replace(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g, '')
+        .replace(/\s/g, '');
+      const certificatesAreValid =
+        certificates.length > 0 &&
+        !contentOutsideCertificates &&
+        certificates.every((pemCertificate) => {
+          try {
+            new X509Certificate(pemCertificate);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+      return certificatesAreValid;
+    };
+
+    let ca;
+    if (tidbInlineCertificate.trim()) {
+      if (!validateCertificate(tidbInlineCertificate)) {
+        throw new Error(
+          'TiDB CA certificate must contain one or more valid PEM-encoded X.509 certificates.',
+        );
+      }
+      ca = tidbInlineCertificate;
+      if (diagnostics) diagnostics.certificateSource = 'inline';
+    } else if (
+      legacyInlineCertificate.trim() &&
+      validateCertificate(legacyInlineCertificate)
+    ) {
+      ca = legacyInlineCertificate;
+      if (diagnostics) diagnostics.certificateSource = 'inline';
+    } else if (caPath) {
       try {
         const stats = fs.statSync(resolvedCaPath);
         if (!stats.isFile()) throw new Error('TiDB CA path is not a file');
@@ -76,38 +119,22 @@ function getDatabaseConfig(environment = process.env, diagnostics) {
           'Unable to read TiDB CA certificate; verify TIDB_CA_CERT_PATH points to an existing readable file.',
         );
       }
-    } else if (inlineCertificate.trim()) {
-      ca = inlineCertificate;
-    } else {
-      throw new Error(
-        'TIDB_CA_CERT_PATH is required for TiDB; optionally provide the PEM content using TIDB_CA_CERT.',
-      );
-    }
-
-    if (!ca.trim()) {
-      throw new Error('TiDB CA certificate is empty.');
-    }
-
-    const certificates =
-      ca.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
-    const contentOutsideCertificates = ca
-      .replace(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g, '')
-      .replace(/\s/g, '');
-    const certificatesAreValid =
-      certificates.length > 0 &&
-      !contentOutsideCertificates &&
-      certificates.every((certificate) => {
-        try {
-          new X509Certificate(certificate);
-          return true;
-        } catch {
-          return false;
-        }
-      });
-
-    if (!certificatesAreValid) {
+      if (diagnostics) diagnostics.certificateSource = 'file';
+      if (!ca.trim()) {
+        throw new Error('TiDB CA certificate is empty.');
+      }
+      if (!validateCertificate(ca)) {
+        throw new Error(
+          'TiDB CA certificate must contain one or more valid PEM-encoded X.509 certificates.',
+        );
+      }
+    } else if (legacyInlineCertificate.trim()) {
       throw new Error(
         'TiDB CA certificate must contain one or more valid PEM-encoded X.509 certificates.',
+      );
+    } else {
+      throw new Error(
+        'Configure TIDB_CA_CERT with valid PEM content or set TIDB_CA_CERT_PATH to a readable CA certificate file.',
       );
     }
     if (diagnostics) diagnostics.certificateValid = true;
@@ -196,6 +223,7 @@ const databaseDiagnostics = {
   certificateFileExists: false,
   certificateFileReadable: false,
   inlineCertificateConfigured: false,
+  certificateSource: 'none',
   certificateValid: false,
   databaseConfigurationValid: false,
 };

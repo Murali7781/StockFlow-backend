@@ -23,8 +23,10 @@ Set `DB_PROVIDER=local` to select local MySQL, configured by
 TiDB Cloud, configured by `TIDB_HOST`, `TIDB_PORT=4000`, `TIDB_USER`,
 `TIDB_PASSWORD`, `TIDB_NAME`, and `TIDB_CA_CERT_PATH`. The TiDB CA must be a
 readable file containing valid PEM-encoded X.509 certificate(s). Alternatively,
-the PEM content can be supplied as `TIDB_CA_CERT` if using a file is not
-available. TiDB TLS always verifies the server certificate.
+the PEM content can be supplied as `TIDB_CA_CERT`. A valid inline certificate
+takes precedence over the file path; `DB_CA_CERT` is also accepted as a legacy
+alias, but `TIDB_CA_CERT` is preferred. TiDB TLS always verifies the server
+certificate.
 Database credentials and CA files must remain server-side.
 
 The backend keeps one Sequelize instance and its managed MySQL connection
@@ -64,10 +66,11 @@ environment values and does not load a local `.env` file. Add
 TiDB CA certificate as a Render **Secret File**, then set
 `TIDB_CA_CERT_PATH` to its absolute path (for example
 `/etc/secrets/tidb-ca.pem`). Render startup diagnostics report the provider,
-whether the certificate path/file is configured, exists and is readable, and
-whether the certificate and database configuration validate; they never log
-certificate contents or credentials. Do not put credentials or certificates in
-frontend variables or commit them.
+whether inline content and a certificate path are configured, whether the
+certificate file exists and can be read, which certificate source was selected,
+and whether certificate/database configuration validates. Logs never include
+certificate contents or credentials. Do not put credentials or certificates
+in frontend variables or commit them.
 
 - `JWT_SECRET`: a randomly generated secret with at least 32 characters.
 - `CORS_ORIGINS`: the deployed frontend origin, such as `https://example.com`.

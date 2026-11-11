@@ -21,7 +21,7 @@ function formatDatabaseError(error) {
   const message = error?.message;
   if (
     typeof message === 'string' &&
-    /^(Database schema is missing required |Missing required database environment variable: |Unable to read TiDB CA certificate; |TIDB_CA_CERT_PATH is required |TiDB CA certificate is empty\.|TiDB CA certificate must contain |DB_PROVIDER must |LOCAL_DB_PORT must |TIDB_PORT must |TIDB_CA_CERT_PATH must |JWT_SECRET must |TRUST_PROXY_HOPS must |PORT must |TiDB selected database mismatch: |TiDB database .* is missing required StockFlow tables: )/.test(
+    /^(Database schema is missing required |Missing required database environment variable: |Unable to read TiDB CA certificate; |Configure TIDB_CA_CERT |TiDB CA certificate is empty\.|TiDB CA certificate must contain |DB_PROVIDER must |LOCAL_DB_PORT must |TIDB_PORT must |TIDB_CA_CERT_PATH must |JWT_SECRET must |TRUST_PROXY_HOPS must |PORT must |TiDB selected database mismatch: |TiDB database .* is missing required StockFlow tables: )/.test(
       message,
     )
   ) {

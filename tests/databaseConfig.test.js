@@ -91,24 +91,70 @@ test('TiDB provider loads a valid CA file and enforces certificate verification'
     inlineCertificateConfigured: false,
     certificateFileExists: true,
     certificateFileReadable: true,
+    certificateSource: 'file',
     certificateValid: true,
     databaseConfigurationValid: true,
   });
 });
 
-test('TiDB provider accepts a valid inline CA certificate', () => {
+test('TiDB provider prefers a valid inline CA certificate', () => {
+  const diagnostics = {};
   const config = getDatabaseConfig(
-    tidbEnvironment({ TIDB_CA_CERT: validCertificate }),
+    tidbEnvironment({
+      TIDB_CA_CERT: validCertificate,
+      TIDB_CA_CERT_PATH: 'missing-tidb-ca.pem',
+    }),
+    diagnostics,
+  );
+
+  assert.equal(config.options.dialectOptions.ssl.ca, validCertificate);
+  assert.equal(config.options.dialectOptions.ssl.rejectUnauthorized, true);
+  assert.equal(diagnostics.certificateFileExists, false);
+  assert.equal(diagnostics.certificateSource, 'inline');
+  assert.equal(diagnostics.certificateValid, true);
+});
+
+test('TiDB provider accepts the existing DB_CA_CERT name as a legacy alias', () => {
+  const config = getDatabaseConfig(
+    tidbEnvironment({ DB_CA_CERT: validCertificate }),
   );
 
   assert.equal(config.options.dialectOptions.ssl.ca, validCertificate);
   assert.equal(config.options.dialectOptions.ssl.rejectUnauthorized, true);
 });
 
+test('TiDB provider falls back to the CA file when the legacy DB_CA_CERT value is invalid', (t) => {
+  const certificatePath = createCertificateFile(t, validCertificate);
+  const config = getDatabaseConfig(
+    tidbEnvironment({
+      DB_CA_CERT: '-----BEGIN CERTIFICATE-----',
+      TIDB_CA_CERT_PATH: certificatePath,
+    }),
+  );
+
+  assert.equal(config.options.dialectOptions.ssl.ca, validCertificate);
+});
+
+test('TiDB provider falls back to valid inline CA when the configured path is invalid', () => {
+  const diagnostics = {};
+  const config = getDatabaseConfig(
+    tidbEnvironment({
+      TIDB_CA_CERT_PATH: 'missing-tidb-ca.pem',
+      TIDB_CA_CERT: validCertificate,
+    }),
+    diagnostics,
+  );
+
+  assert.equal(config.options.dialectOptions.ssl.ca, validCertificate);
+  assert.equal(config.options.dialectOptions.ssl.rejectUnauthorized, true);
+  assert.equal(diagnostics.certificateFileExists, false);
+  assert.equal(diagnostics.certificateSource, 'inline');
+});
+
 test('TiDB provider requires a CA path or inline certificate', () => {
   assert.throws(
     () => getDatabaseConfig(tidbEnvironment()),
-    /TIDB_CA_CERT_PATH is required/,
+    /Configure TIDB_CA_CERT with valid PEM content or set TIDB_CA_CERT_PATH/,
   );
 });
 
@@ -147,7 +193,7 @@ test('TiDB provider rejects an empty CA file', (t) => {
   );
 });
 
-test('TiDB provider rejects malformed PEM certificate content', () => {
+test('TiDB provider rejects malformed inline PEM certificate content', () => {
   assert.throws(
     () =>
       getDatabaseConfig(
@@ -155,6 +201,21 @@ test('TiDB provider rejects malformed PEM certificate content', () => {
           TIDB_CA_CERT: `-----BEGIN CERTIFICATE-----
 invalid
 -----END CERTIFICATE-----`,
+        }),
+      ),
+    /valid PEM-encoded X.509 certificates/,
+  );
+});
+
+test('TiDB provider rejects malformed inline certificate even if a valid file path exists', (t) => {
+  const certificatePath = createCertificateFile(t, validCertificate);
+
+  assert.throws(
+    () =>
+      getDatabaseConfig(
+        tidbEnvironment({
+          TIDB_CA_CERT_PATH: certificatePath,
+          TIDB_CA_CERT: 'not-a-valid-certificate',
         }),
       ),
     /valid PEM-encoded X.509 certificates/,
