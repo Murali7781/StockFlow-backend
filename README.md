@@ -74,14 +74,16 @@ in frontend variables or commit them.
 
 - `JWT_SECRET`: a randomly generated secret with at least 32 characters.
 - `CORS_ORIGINS`: the frontend origin, without a path or trailing slash. For the
-  current deployment, set it to
-  `https://stock-flow-frontend-q3aievnkw-murali7781s-projects.vercel.app`.
+  current deployment shown in the browser, set it to
+  `https://stock-flow-frontend-murex.vercel.app`. If multiple Vercel origins
+  must be supported, separate them with commas.
 - `TRUST_PROXY_HOPS`: the exact number of trusted proxy hops; set to `1` for a
   typical Render service.
 
 Render supplies `PORT` automatically; the backend also defaults to `3000` for
-local development. In Vercel, set `VITE_API_URL` to
-`https://stockflow-backend-kspj.onrender.com/api` and redeploy the frontend.
+local development. The frontend defaults to
+`https://stockflow-backend-kspj.onrender.com/api`; set `VITE_API_URL` in Vercel
+only to override that API base URL, then redeploy the frontend.
 The `/api` suffix is required: the authentication endpoints are mounted under
 `/api/auth`, not `/auth`.
 
@@ -89,7 +91,7 @@ To validate the preflight after configuring the Render environment, run:
 
 ```powershell
 curl.exe -i -X OPTIONS "https://stockflow-backend-kspj.onrender.com/api/auth/login" `
-  -H "Origin: https://stock-flow-frontend-q3aievnkw-murali7781s-projects.vercel.app" `
+  -H "Origin: https://stock-flow-frontend-murex.vercel.app" `
   -H "Access-Control-Request-Method: POST" `
   -H "Access-Control-Request-Headers: content-type"
 ```
