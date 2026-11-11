@@ -76,7 +76,10 @@ in frontend variables or commit them.
 - `CORS_ORIGINS`: the frontend origin, without a path or trailing slash. For the
   current deployment shown in the browser, set it to
   `https://stock-flow-frontend-murex.vercel.app`. If multiple Vercel origins
-  must be supported, separate them with commas.
+  must be supported, separate them with commas. Only `CORS_ORIGINS` is read.
+  Use the exact origin in the browser address bar; Vercel preview deployment
+  hostnames differ from the stable production domain and must be added
+  separately if you use them.
 - `TRUST_PROXY_HOPS`: the exact number of trusted proxy hops; set to `1` for a
   typical Render service.
 
